@@ -543,6 +543,23 @@ void MulticopterPositionControl::Run()
 				max_speed_xy,
 				math::min(speed_up, _param_mpc_z_vel_max_up.get()), // takeoff ramp starts with negative velocity limit
 				math::max(speed_down, 0.f));
+				
+				
+			// Freeze yaw setpoint during robust trajectory
+			int32_t traj_active = 0;
+			param_get(param_find("MC_RATT_TRAJ"), &traj_active);
+
+			if (traj_active) {
+			    // Capturar yaw solo la primera vez
+			    if (!_traj_yaw_initialized) {
+				_traj_fixed_yaw = states.yaw;
+				_traj_yaw_initialized = true;
+			    }
+			    _setpoint.yaw = _traj_fixed_yaw;
+			    _setpoint.yawspeed = 0.f;
+			} else {
+			    _traj_yaw_initialized = false;  // reset para la próxima activación
+			}
 
 			_control.setInputSetpoint(_setpoint);
 
@@ -609,6 +626,19 @@ void MulticopterPositionControl::Run()
 			vehicle_attitude_setpoint_s attitude_setpoint{};
 			_control.getAttitudeSetpoint(attitude_setpoint);
 			attitude_setpoint.timestamp = hrt_absolute_time();
+			//_vehicle_attitude_setpoint_pub.publish(attitude_setpoint);
+			
+			// If robust trajectory is active, preserve q_d published by robust controller
+			if (traj_active) {
+			    vehicle_attitude_setpoint_s robust_sp{};
+			    if (_vehicle_attitude_setpoint_sub.copy(&robust_sp)) {
+				attitude_setpoint.q_d[0] = robust_sp.q_d[0];
+				attitude_setpoint.q_d[1] = robust_sp.q_d[1];
+				attitude_setpoint.q_d[2] = robust_sp.q_d[2];
+				attitude_setpoint.q_d[3] = robust_sp.q_d[3];
+				attitude_setpoint.yaw_sp_move_rate = 0.f;
+			    }
+			}
 			_vehicle_attitude_setpoint_pub.publish(attitude_setpoint);
 
 		} else {

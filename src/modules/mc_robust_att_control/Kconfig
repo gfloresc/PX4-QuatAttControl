@@ -1,0 +1,5 @@
+menuconfig MODULES_MC_ROBUST_ATT_CONTROL
+	bool "mc_robust_att_control"
+	default n
+	---help---
+		Enable robust direct multicopter attitude controller.
