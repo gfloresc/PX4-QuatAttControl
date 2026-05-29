@@ -1,62 +1,263 @@
-# PX4 Drone Autopilot
+# PX4-QuatAttControl
 
-[![Releases](https://img.shields.io/github/release/PX4/PX4-Autopilot.svg)](https://github.com/PX4/PX4-Autopilot/releases) [![DOI](https://zenodo.org/badge/22634/PX4/PX4-Autopilot.svg)](https://zenodo.org/badge/latestdoi/22634/PX4/PX4-Autopilot)
+Robust quaternion-based attitude controller for PX4 multicopters, implementing **Theorem 2 (Tracking)** from:
 
-[![Build Targets](https://github.com/PX4/PX4-Autopilot/actions/workflows/build_all_targets.yml/badge.svg?branch=main)](https://github.com/PX4/PX4-Autopilot/actions/workflows/build_all_targets.yml) [![SITL Tests](https://github.com/PX4/PX4-Autopilot/workflows/SITL%20Tests/badge.svg?branch=master)](https://github.com/PX4/PX4-Autopilot/actions?query=workflow%3A%22SITL+Tests%22)
+> G. Flores and J. Torres, *"Almost Global Exponential Attitude Stabilization via Continuous Nonlinear Quaternion Feedback"*, TAMIU RAPTOR Lab.
 
-[![Discord Shield](https://discordapp.com/api/guilds/1022170275984457759/widget.png?style=shield)](https://discord.gg/dronecode)
+The controller replaces the default `mc_att_control + mc_rate_control` pipeline with a direct torque law designed entirely in the unit quaternion space, providing semi-global exponential stability with an explicit decay rate and no sign-function discontinuities.
 
-This repository holds the [PX4](http://px4.io) flight control solution for drones, with the main applications located in the [src/modules](https://github.com/PX4/PX4-Autopilot/tree/main/src/modules) directory. It also contains the PX4 Drone Middleware Platform, which provides drivers and middleware to run drones.
+---
 
-PX4 is highly portable, OS-independent and supports Linux, NuttX and MacOS out of the box.
+## Control Law
 
-* Official Website: http://px4.io (License: BSD 3-clause, [LICENSE](https://github.com/PX4/PX4-Autopilot/blob/main/LICENSE))
-* [Supported airframes](https://docs.px4.io/main/en/airframes/airframe_reference.html) ([portfolio](https://px4.io/ecosystem/commercial-systems/)):
-  * [Multicopters](https://docs.px4.io/main/en/frames_multicopter/)
-  * [Fixed wing](https://docs.px4.io/main/en/frames_plane/)
-  * [VTOL](https://docs.px4.io/main/en/frames_vtol/)
-  * [Autogyro](https://docs.px4.io/main/en/frames_autogyro/)
-  * [Rover](https://docs.px4.io/main/en/frames_rover/)
-  * many more experimental types (Blimps, Boats, Submarines, High Altitude Balloons, Spacecraft, etc)
-* Releases: [Downloads](https://github.com/PX4/PX4-Autopilot/releases)
+The full tracking torque (body frame) is:
 
-## Releases
+```
+τ = Ω × JΩ
+  + J [ −Ω̂(Rₑᵀ Ωd)          (feedforward Coriolis)
+        + Rₑᵀ Ω̇d              (feedforward inertia)
+        − k1·diag(|Ω̃|)·qve   (nonlinear coupling)
+        − κ·Ω̃·√(1−q0e)       (nonlinear damping)
+        − k3·qve               (attitude restoring)
+        − k4·Ω̃ ]              (linear damping)
+```
 
-Release notes and supporting information for PX4 releases can be found on the [Developer Guide](https://docs.px4.io/main/en/releases/).
+where `Ω̃ = Ω − Rₑᵀ Ωd` is the angular velocity error and `Ωd`, `Ω̇d` are estimated by finite-differencing `qd`.
 
-## Building a PX4 based drone, rover, boat or robot
+---
 
-The [PX4 User Guide](https://docs.px4.io/main/en/) explains how to assemble [supported vehicles](https://docs.px4.io/main/en/airframes/airframe_reference.html) and fly drones with PX4. See the [forum and chat](https://docs.px4.io/main/en/#getting-help) if you need help!
+## Requirements
 
+- Ubuntu 20.04 or 22.04
+- ROS 2 (optional, not required for SITL)
+- Gazebo Classic 11
+- Python 3.8+
 
-## Changing Code and Contributing
+---
 
-This [Developer Guide](https://docs.px4.io/main/en/development/development.html) is for software developers who want to modify the flight stack and middleware (e.g. to add new flight modes), hardware integrators who want to support new flight controller boards and peripherals, and anyone who wants to get PX4 working on a new (unsupported) airframe/vehicle.
+## Installation
 
-Developers should read the [Guide for Contributions](https://docs.px4.io/main/en/contribute/).
-See the [forum and chat](https://docs.px4.io/main/en/#getting-help) if you need help!
+### 1. Clone this repository
 
+```bash
+git clone https://github.com/gfloresc/PX4-QuatAttControl.git
+cd PX4-QuatAttControl
+```
 
-## Weekly Dev Call
+### 2. Install PX4 dependencies
 
-The PX4 Dev Team syncs up on a [weekly dev call](https://docs.px4.io/main/en/contribute/).
+```bash
+bash Tools/setup/ubuntu.sh
+```
 
-> **Note** The dev call is open to all interested developers (not just the core dev team). This is a great opportunity to meet the team and contribute to the ongoing development of the platform. It includes a QA session for newcomers. All regular calls are listed in the [Dronecode calendar](https://www.dronecode.org/calendar/).
+### 3. Install Python dependencies
 
+```bash
+pip3 install --user pyulog pymavlink
+```
 
-## Maintenance Team
+### 4. Build for SITL
 
-See the latest list of maintainers on [MAINTAINERS](MAINTAINERS.md) file at the root of the project.
+```bash
+make px4_sitl gazebo
+```
 
-For the latest stats on contributors please see the latest stats for the Dronecode ecosystem in our project dashboard under [LFX Insights](https://insights.lfx.linuxfoundation.org/foundation/dronecode). For information on how to update your profile and affiliations please see the following support link on how to [Complete Your LFX Profile](https://docs.linuxfoundation.org/lfx/my-profile/complete-your-lfx-profile). Dronecode publishes a yearly snapshot of contributions and achievements on its [website under the Reports section](https://dronecode.org).
+This compiles the firmware including the robust attitude controller module (`mc_robust_att_control`).
 
-## Supported Hardware
+---
 
-For the most up to date information, please visit [PX4 User Guide > Autopilot Hardware](https://docs.px4.io/main/en/flight_controller/).
+## Running the Simulation
 
-## Project Governance
+### 1. Launch Gazebo SITL
 
-The PX4 Autopilot project including all of its trademarks is hosted under [Dronecode](https://www.dronecode.org/), part of the Linux Foundation.
+```bash
+source /usr/share/gazebo/setup.bash
+make px4_sitl gazebo
+```
 
-<a href="https://www.dronecode.org/" style="padding:20px" ><img src="https://dronecode.org/wp-content/uploads/sites/24/2020/08/dronecode_logo_default-1.png" alt="Dronecode Logo" width="110px"/></a>
-<div style="padding:10px">&nbsp;</div>
+### 2. Launch QGroundControl (separate terminal)
+
+```bash
+~/QGroundControl.AppImage
+```
+
+Download QGroundControl from: https://docs.qgroundcontrol.com/master/en/getting_started/download_and_install.html
+
+### 3. Enable virtual joystick in QGC
+
+Go to **Application Settings → Virtual Joystick** and enable it.
+
+---
+
+## Controller Selection
+
+The controller is selected via the `MC_RATT_USE` parameter:
+
+| Value | Controller |
+|-------|-----------|
+| `0` | Default PX4 (`mc_att_control + mc_rate_control`) |
+| `1` | Robust quaternion controller (this work) — **default** |
+
+To switch from QGroundControl: **Vehicle Configuration → Parameters → search `MC_RATT_USE`**.
+
+Or from the PX4 console:
+
+```bash
+# Use robust controller (default)
+param set MC_RATT_USE 1
+
+# Use default PX4 controller
+param set MC_RATT_USE 0
+```
+
+---
+
+## Flight Procedure
+
+### Basic hover test
+
+1. Launch simulation
+2. In QGC: arm and takeoff in **Position mode**
+3. Climb to at least 3 meters
+4. Switch to **Altitude mode**
+5. Verify controller is running from PX4 console:
+
+```bash
+mc_robust_att_control status   # should say: running
+mc_att_control status          # should say: not running
+```
+
+---
+
+## Attitude Tracking Experiment (Paper Section V)
+
+The controller includes an internal sinusoidal attitude trajectory for validation, matching the simulation in the paper.
+
+### Activate trajectory
+
+```bash
+# While hovering stably in Altitude mode:
+param set MC_RATT_TRAJ 1
+```
+
+The drone will track:
+```
+qd(t) = ZYX(ψ₀, py(t), px(t))
+
+px(t) = A_roll  · window(t) · sin(0.8t)   [roll  ±17°]
+py(t) = A_pitch · window(t) · sin(1.2t)   [pitch ±17°]
+ψ₀   = yaw at activation time (fixed)
+```
+
+where `window(t)` is a Hanning envelope for smooth start.
+
+### Deactivate trajectory
+
+```bash
+param set MC_RATT_TRAJ 0
+```
+
+### Apply external disturbance (wrench injection)
+
+In a separate terminal while the drone is flying:
+
+```bash
+# Apply torque disturbance
+gz topic -p /gazebo/default/iris/base_link/wrench \
+  -m "force: {x: 0, y: 0, z: 0} torque: {x: 5, y: 0, z: 0}"
+
+# Remove disturbance
+gz topic -p /gazebo/default/iris/base_link/wrench \
+  -m "force: {x: 0, y: 0, z: 0} torque: {x: 0, y: 0, z: 0}"
+```
+
+---
+
+## Controller Parameters
+
+All parameters are in the `MC_RATT_*` group in QGroundControl (**Parameters → Multicopter Robust Attitude Control**).
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `MC_RATT_USE` | 1 | 0 = PX4 default, 1 = robust controller |
+| `MC_RATT_K1` | 5.0 | Nonlinear coupling gain |
+| `MC_RATT_K3` | 15.0 | Attitude restoring gain (stiffness) |
+| `MC_RATT_K4` | 5.0 | Linear velocity error damping |
+| `MC_RATT_KAP` | 0.8 | Nonlinear damping gain κ |
+| `MC_RATT_JXX` | 0.029125 | Nominal inertia Jxx [kg·m²] |
+| `MC_RATT_JYY` | 0.029125 | Nominal inertia Jyy [kg·m²] |
+| `MC_RATT_JZZ` | 0.055225 | Nominal inertia Jzz [kg·m²] |
+| `MC_RATT_TMAX_X` | 0.50 | Max roll torque [N·m] |
+| `MC_RATT_TMAX_Y` | 0.50 | Max pitch torque [N·m] |
+| `MC_RATT_TMAX_Z` | 0.40 | Max yaw torque [N·m] |
+| `MC_RATT_ODCUT` | 10.0 | Ωd_dot LPF cutoff [Hz] |
+| `MC_RATT_TRAJ` | 0 | 0 = PX4 setpoint, 1 = internal trajectory |
+| `MC_RATT_TDUR` | 5.0 | Trajectory duration [s] |
+
+---
+
+## Log Analysis
+
+Logs are saved to:
+
+```
+build/px4_sitl_default/rootfs/log/<date>/
+```
+
+Find the most recent log:
+
+```bash
+find ~/PX4-QuatAttControl/build/px4_sitl_default/rootfs/log/ -name "*.ulg" | sort | tail -1
+```
+
+Upload to **https://review.px4.io** for visualization of roll, pitch, yaw tracking vs setpoint.
+
+---
+
+## Modified Files
+
+The following PX4 files were modified to integrate the controller:
+
+| File | Change |
+|------|--------|
+| `ROMFS/px4fmu_common/init.d/rc.mc_apps` | Controller selection via `MC_RATT_USE` |
+| `src/modules/mc_pos_control/MulticopterPositionControl.cpp` | Preserve attitude setpoint during trajectory |
+| `src/modules/mc_pos_control/MulticopterPositionControl.hpp` | Added subscription and state variables |
+| `boards/px4/sitl/default.px4board` | Added `mc_robust_att_control` to build |
+
+New module added:
+
+```
+src/modules/mc_robust_att_control/
+├── CMakeLists.txt
+├── Kconfig
+├── mc_robust_att_control.hpp
+├── mc_robust_att_control_main.cpp
+└── mc_robust_att_control_params.c
+```
+
+---
+
+## Citation
+
+If you use this work, please cite:
+
+```bibtex
+@article{flores2026quaternion,
+  title   = {Almost Global Exponential Attitude Stabilization via 
+             Continuous Nonlinear Quaternion Feedback},
+  author  = {Flores, Gerardo and Torres, Jorge},
+  journal = {IEEE Transactions on Automatic Control},
+  year    = {2026},
+  note    = {Under review}
+}
+```
+
+---
+
+## Contact
+
+**Gerardo Flores, Ph.D.**  
+Associate Professor, RAPTOR Lab  
+Texas A&M International University (TAMIU)  
+gerardo.flores@tamiu.edu
